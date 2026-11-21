@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101113">
+  <meta name="description" content="影视雷达 · 发现电影、剧集和动画，收藏片单和查找观看来源。">
+  <title>影视雷达 · Film Radar</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="catalog.js" defer></script>
+  <script src="verified-films.js" defer></script>
+  <script src="assets/hls.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到内容</a>
+  <header class="top"><div class="top-inner">
+    <a class="brand" href="#" aria-label="影视雷达首页"><span class="brand-mark" data-i="scan-line"></span><span>影视雷达<small>FILM RADAR</small></span></a>
+    <nav class="nav" aria-label="主导航">
+      <button data-view="home" aria-current="page"><span data-i="play"></span>放映</button>
+      <button data-view="search"><span data-i="search"></span>搜索</button>
+      <button data-view="library"><span data-i="bookmark"></span>我的片单</button>
+    </nav>
+    <div id="search-history" class="search-history" hidden><span class="search-history-head">最近搜索</span><div id="search-history-list" class="search-history-list"></div><button type="button" class="search-history-clear" data-action="history-clear">清空</button></div>
+    <form id="search-form" role="search" class="search-form">
+      <span data-i="search"></span><input id="query" name="q" type="search" placeholder="搜索片名或关键词" aria-label="搜索片名或关键词" maxlength="100" autocomplete="off" enterkeyhint="search" required>
+      <button type="submit" class="search-submit" aria-label="提交搜索" title="提交搜索"><span data-i="arrow-right"></span></button>
+    </form>
+  </div></header>
+  <main id="main" tabindex="-1">
+    <section id="home-view">
+      <section id="hero" class="hero" aria-label="精选放映"></section>
+      <div class="wrap home-content">
+        <section id="home-resume" class="resume-section" hidden><div class="section-head"><div><div class="kicker"><i></i> PLAYBACK</div><h2>继续观看</h2></div></div><div id="resume-items" class="resume-list"></div></section>
+        <details id="online-directory" hidden><summary class="button outline">待检测来源目录 · 展开后按需检测</summary><section id="online-library" class="online-library" aria-labelledby="online-heading"><div class="section-head"><div><div class="kicker"><i></i> ONLINE LIBRARY</div><h2 id="online-heading">待检测来源目录</h2></div></div><p class="source-caption">以下是央视与开放电影的候选来源，尚未逐条验证，不计入完整可播片库。点击后按需检测。</p><form id="online-search-form" class="online-search" role="search"><label class="sr-only" for="online-query">搜索在线片库</label><input id="online-query" type="search" maxlength="100" placeholder="搜索央视与开放电影片库"><button class="button outline" type="submit">搜索片库</button></form><div id="online-filters" class="filters screen-filters" aria-label="在线来源"></div><p id="online-status" class="source-status" role="status"></p><div id="online-grid" class="grid"></div><div id="online-empty" hidden></div><div id="online-pager" class="online-pager" aria-label="在线片库分页"></div></section></details>
+        <section id="discover"><div class="section-head discover-head"><div><div class="kicker"><i></i> SCREENING ROOM</div><h2>完整可播片库</h2></div><button type="button" class="button outline" data-action="import" data-value=""><span data-i="plus"></span>导入原片</button></div><section id="scrape-panel" class="scrape-panel" aria-label="片库刮削进度"><div class="scrape-head"><div class="kicker"><i></i> LIBRARY HARVEST</div><strong id="scrape-title">片库刮削</strong><button type="button" class="chip" id="scrape-toggle" data-action="scrape-toggle">暂停</button></div><div class="scrape-bar"><span id="scrape-fill" style="width:0%"></span></div><div class="scrape-stats" id="scrape-stats"></div><div class="scrape-sources" id="scrape-sources"></div></section><div class="filters screen-filters" aria-label="影视分类" id="home-filters"></div><div class="grid" id="home-grid"></div><div id="home-empty" hidden></div></section>
+      </div>
+    </section>
+    <section id="search-view" class="wrap inner-view" hidden>
+      <div class="section-head"><div><div class="kicker"><i></i> SEARCH</div><h1 id="search-heading">搜索影视</h1></div></div>
+      <div id="search-tags" class="filters suggestions" aria-label="搜索示例"></div>
+      <div id="source-status" class="source-status" aria-live="polite"></div>
+      <p id="search-playback-note" class="source-caption" role="status" hidden></p>
+      <div id="search-filters" class="filters screen-filters" aria-label="搜索结果筛选" hidden></div>
+      <div id="search-grid" class="grid"></div><div id="search-empty" hidden></div>
+      <div id="external-links" class="external-links" hidden></div>
+    </section>
+    <section id="library-view" class="wrap inner-view" hidden>
+      <div class="section-head"><div><div class="kicker"><i></i> COLLECTION</div><h1>我的片单</h1></div><button class="button outline" id="new-list"><span data-i="plus"></span>新建片单</button></div>
+      <div id="list-tabs" class="filters"></div><div id="list-notice" class="muted list-notice"></div><div id="library-grid" class="grid"></div><div id="library-empty" hidden></div>
+    </section>
+  </main>
+  <footer class="wrap footer"><span>影视雷达 <b>·</b> FILM RADAR</span><span>影视资料：IMDb、TMDB、TVmaze <b>·</b> 片单保存在此浏览器</span></footer>
+  <dialog id="detail" aria-label="影片详情"><div id="detail-content"></div></dialog>
+  <dialog id="sheet" aria-labelledby="sheet-title"><div id="sheet-content"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="wrap">此网站需要开启 JavaScript。</p></noscript>
+</body>
+</html>
