@@ -108,6 +108,7 @@ function cards(xs, key = 'full') { return xs.map(x => {
 function save(x, extra = '') { const on = saved(x.id); return iconButton('save', '加入或移出片单', x.id, `${extra} ${on ? 'is-saved' : ''}`, on); }
 function empty(iconName,title,description='') { return `<div class="blank">${icon(iconName)}<strong>${esc(title)}</strong>${description ? `<p>${esc(description)}</p>` : ''}</div>`; }
 function renderHero() {
+  if (!$('hero')) return; // 精选放映大图已移除，保留函数以兼容其他调用
   const x = featured[slide];
   $('hero').innerHTML = `<img class="hero-image" src="${url(x.backdrop,true)}" alt="" fetchpriority="high" style="object-position:${x.position || 'center'}"><div class="wrap hero-inner"><div class="hero-copy"><div class="kicker"><i></i>${esc(x.featured)}</div><h1>${esc(x.title)}</h1><p class="hero-alt">${esc(x.original)}</p><div class="hero-meta">${meta(x,true)}</div><p class="hero-summary">${esc(x.summary)}</p><div class="actions"><button class="button primary" data-action="${x.media?.length ? 'resume' : 'detail'}" data-value="${x.id}">${icon(x.media?.length ? 'play' : 'circle-alert')}${x.media?.length ? '播放正片' : '查看详情'}</button>${save(x)}</div></div><div class="hero-controls">${iconButton('left','上一部精选','','small')}<span class="hero-index"><b>${String(slide+1).padStart(2,'0')}</b> / ${String(featured.length).padStart(2,'0')}</span>${iconButton('right','下一部精选','','small')}</div></div>`;
 }
@@ -239,7 +240,7 @@ function renderHome() {
   const key = filter === 'preview' ? 'trailer' : 'full';
   const shown = pool.slice(0, homeShown);
   $('home-grid').innerHTML = cards(shown,key) + (pool.length > shown.length ? `<div class="home-more"><button class="button outline" data-action="home-more">继续加载（还有 ${pool.length - shown.length} 部）</button></div>` : '');
-  $('hero').querySelector('.hero-controls').hidden = featured.length < 2;
+  if ($('hero')) $('hero').querySelector('.hero-controls').hidden = featured.length < 2;
   // 同一部片只留最近一条进度，避免同一剧集的多个分集把这一栏撑长
   const recent = [...new Map(history.filter(h => { const x = items.get(h.id); return x && availability(x) === 'open' && x.media?.some(m => m.key === h.key); }).map(h => [h.id, h])).values()].slice(0, 8);
   $('home-resume').hidden = !recent.length;
@@ -639,7 +640,7 @@ document.addEventListener('click',event=>{
     case 'scrape-quality': pickScrapedFilter('quality', id); break;
     case 'filter': filter = id; homeShown = 96; renderHome(); $('home-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); break;
     case 'search-filter': if (searchState) { searchState.mode=id; renderSearch(); $('search-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); } break;
-    case 'left': case 'right': {const action = b.dataset.action; slide = (slide + (action === 'left' ? -1 : 1) + featured.length) % featured.length; renderHero(); $('hero').querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true}); break;}
+    case 'left': case 'right': { if (!$('hero')) break; const action = b.dataset.action; slide = (slide + (action === 'left' ? -1 : 1) + featured.length) % featured.length; renderHero(); $('hero').querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true}); break;}
     case 'query': submit(id); break;
     case 'history-clear': searches = []; persist(searchKey, searches); renderSearchHistory(false); break;
     case 'trend': submit(id); break;
