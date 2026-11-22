@@ -613,13 +613,24 @@ function startMedia(key) {
     } else { video.src = link; play(); }
   }
   attachSource(source);
+  armEpbar();
+}
+let epbarTimer = 0;
+function armEpbar() {
+  const bar = document.querySelector('.player-epbar');
+  if (!bar) return;
+  bar.classList.remove('idle');
+  clearTimeout(epbarTimer);
+  const panel = $('player-eppanel');
+  if (panel && !panel.hidden) return; // 面板开着就保持可见
+  epbarTimer = setTimeout(()=>{ const b2=document.querySelector('.player-epbar'); if (b2) b2.classList.add('idle'); }, 3500);
 }
 function toggleEpisodePanel() {
   const panel = $('player-eppanel');
   if (!panel || !current?.media?.length) return;
   if (!panel.hidden) { panel.hidden = true; return; }
   const x = current, active = player?.key;
-  panel.innerHTML = `<h4>选集 · ${esc(x.title)}（${x.media.length}）</h4><div class="player-epgrid">${x.media.map(m=>`<button type="button" class="chip" data-action="episode-pick" data-value="${esc(m.key)}" aria-pressed="${m.key === active}">${esc(m.label)}</button>`).join('')}</div>`;
+  panel.innerHTML = `<div class="player-ep-head"><h4>选集 · ${esc(x.title)}（${x.media.length}）</h4><button type="button" data-action="episode-close" aria-label="收起选集">✕</button></div><div class="player-epgrid">${x.media.map(m=>`<button type="button" class="chip" data-action="episode-pick" data-value="${esc(m.key)}" aria-pressed="${m.key === active}">${esc(m.label)}</button>`).join('')}</div>`;
   panel.hidden = false;
 }
 function openSheet(html,title, focusInput = false) {
@@ -673,6 +684,7 @@ function refreshSaved() {
   if (view === 'library') renderLibrary();
 }
 document.addEventListener('click',event=>{
+  if (event.target.closest?.('.player')) armEpbar();
   const b = event.target.closest('button[data-action],button[data-view],#new-list'); if (!b) return;
   if (b.dataset.view) { openView(b.dataset.view); if (b.dataset.view === 'search') $('query').focus(); return; }
   if (b.id === 'new-list') return listForm('','');
@@ -712,14 +724,16 @@ document.addEventListener('click',event=>{
         // 全屏容器而不是视频本体：这样切集时只换 video，不会退出全屏，选集控件也一直在。
         if (box.requestFullscreen) box.requestFullscreen().then(() => {
           try { const p = screen.orientation?.lock?.('landscape'); if (p?.catch) p.catch(()=>{}); } catch {}
+          armEpbar();
         }).catch(()=>{ v.webkitEnterFullscreen?.(); });
         else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
       } catch {}
       break;
     }
-    case 'player-exitfs': { try { document.exitFullscreen?.(); } catch {} break; }
-    case 'player-episodes': toggleEpisodePanel(); break;
-    case 'episode-pick': { if (player) startMedia(id); break; }
+    case 'player-exitfs': { const p=$('player-eppanel'); if (p) p.hidden=true; try { document.exitFullscreen?.(); } catch {} break; }
+    case 'player-episodes': { toggleEpisodePanel(); armEpbar(); break; }
+    case 'episode-close': { const p=$('player-eppanel'); if (p) p.hidden=true; armEpbar(); break; }
+    case 'episode-pick': { const p=$('player-eppanel'); if (p) p.hidden=true; if (player) startMedia(id); break; }
     case 'vod-alt': {const x = items.get(b.dataset.item) || current; if (x) switchVodLine(x, id); break;}
     case 'close': b.closest('dialog')?.close(); break;
     case 'save': chooseList(id); break;

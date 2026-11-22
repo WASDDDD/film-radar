@@ -58,14 +58,19 @@ dialog{inset:0;max-width:min(760px,calc(100% - 24px));width:760px;max-height:min
 .pick-reasons{margin-top:9px}.pick-badge{font-size:11px;font-weight:730;color:var(--dark);background:var(--accent);border-radius:4px;padding:3px 7px;white-space:nowrap}.chip.reason{cursor:default;font-size:11.5px;padding:4px 8px}.chip.reason:hover{color:var(--dim);background:var(--surface)}.resume-card em{font-style:normal;color:var(--accent);font-size:11px}
 /* 全屏选集：容器全屏时在右上叠加选集控件，切集不退出全屏 */
 .player{position:relative}
-.player-epbar{display:none;position:absolute;right:14px;top:14px;z-index:4;flex-direction:column;gap:8px;align-items:flex-end}
+.player-epbar{display:none;position:absolute;right:14px;top:14px;z-index:4;flex-direction:column;gap:8px;align-items:flex-end;transition:opacity .3s ease}
 .player:fullscreen .player-epbar,.player:-webkit-full-screen .player-epbar{display:flex}
+.player-epbar.idle{opacity:.12}
+.player-epbar.idle:hover,.player-epbar.up{opacity:1}
 .player-epbar button{background:#0009;color:#fff;border:1px solid #ffffff59;border-radius:22px;padding:9px 15px;font-size:13px;min-height:auto;backdrop-filter:blur(6px)}
 .player-epbar button:active{background:#ffffff26}
 .player-eppanel{position:static;width:auto;max-height:none;overflow:visible;background:var(--panel);padding:12px;border:1px solid var(--line);border-radius:7px;margin-top:10px}
-.player-eppanel h4{font-size:14px;margin:0 0 10px;color:var(--ink)}
+.player-eppanel h4{font-size:14px;margin:0;color:var(--ink);flex:1}
+.player-ep-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.player-ep-head button{background:#ffffff14;color:inherit;border:1px solid var(--line);border-radius:6px;min-width:34px;min-height:34px;font-size:15px}
 .player:fullscreen .player-eppanel,.player:-webkit-full-screen .player-eppanel{position:absolute;top:0;right:0;z-index:5;width:min(440px,94vw);height:100%;overflow-y:auto;background:#0c0c0ef5;margin:0;border:0;border-left:1px solid #ffffff1f;border-radius:0;padding:20px 16px 24px;backdrop-filter:blur(10px)}
 .player:fullscreen .player-eppanel h4,.player:-webkit-full-screen .player-eppanel h4{color:#fff}
+.player:fullscreen .player-ep-head button,.player:-webkit-full-screen .player-ep-head button{background:#ffffff1f;border-color:#ffffff40;color:#fff}
 .player-epgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px}
 .player-epgrid .chip{justify-content:center;padding:10px 4px;font-size:12px;min-height:auto;overflow:hidden;text-overflow:ellipsis}
 
