@@ -7,6 +7,7 @@ import { searchVod, resolveEpisodeById, fetchItemById } from '../../lib/vod-sour
 import { browse, scrapeStatus } from '../../lib/library-browse.mjs';
 import { scrapeMore } from '../../lib/scrape-once.mjs';
 import { fetchTrending } from '../../lib/trending.mjs';
+import { fetchMiyo } from '../../lib/miyo.mjs';
 
 const CATEGORIES = ['all', '剧集', '电影', '动漫', '综艺', '纪录', '体育'];
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
@@ -131,6 +132,18 @@ export async function handler(event) {
       return json(200, browse({ q, kind, category, region, quality, page, limit }));
     }
 
+    if (route === 'miyo') {
+      const q = (params.q || '').trim();
+      if (!q || q.length > 100) return json(400, { error: '片名查询参数无效' });
+      const key = `miyo:${q}`;
+      const hit = cache.get(key);
+      if (hit && hit.until > Date.now()) return json(200, hit.data);
+      try {
+        const data = await fetchMiyo(q);
+        cache.set(key, { until: Date.now() + 10 * 60_000, data });
+        return json(200, data);
+      } catch { return json(502, { ok:false, error:'影视资料库暂时不可用', items:[] }); }
+    }
     if (route === 'search') {
       const q = (params.q || '').trim();
       if (!q || q.length > 100) return json(400, { error: 'Expected a search query of 1–100 characters' });

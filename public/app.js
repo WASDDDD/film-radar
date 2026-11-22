@@ -305,6 +305,21 @@ function platforms(title) {
   const q = encodeURIComponent(title);
   return platform('爱奇艺',`https://so.iqiyi.com/so/q_${q}`) + platform('腾讯视频',`https://v.qq.com/x/search/?q=${q}`) + platform('优酷',`https://so.youku.com/search_video/q_${q}`) + platform('哔哩哔哩',`https://search.bilibili.com/bangumi?keyword=${q}`);
 }
+// MIYO 影视资料补充：搜索时并行展示 IMDb/TMDB 评分、年份、类型、剧情、海报；只作资料，不产生可播源。
+function renderMiyo() {
+  const box = $('miyo-panel');
+  if (!box) return;
+  const m = searchState?.miyo;
+  if (!m?.items?.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  const genreList = x => (x.genres || []).slice(0,3).map(esc).join(' / ');
+  const itemsHtml = m.items.slice(0,5).map(x => {
+    const poster = url(x.poster) ? `<img src="${x.poster}" alt="" loading="lazy" decoding="async">` : '';
+    const score = x.rating ? `<span class="miyo-score">★ ${esc(x.rating)}</span>` : '';
+    return `<article class="miyo-item">${poster ? `<div class="miyo-poster">${poster}</div>` : ''}<div class="miyo-info"><strong>${esc(x.title)}</strong><div class="miyo-meta">${score}${x.year ? `<span>${esc(x.year)}</span>` : ''}${genreList(x) ? `<span>${genreList(x)}</span>` : ''}</div>${x.plot ? `<p class="miyo-plot">${esc(x.plot)}</p>` : ''}${x.watch ? `<a class="miyo-link" href="${x.watch}" target="_blank" rel="noopener noreferrer">IMDb 资料 ${icon('arrow-up-right')}</a>` : ''}</div></article>`;
+  }).join('');
+  box.innerHTML = `<div class="section-head"><div><div class="kicker"><i></i> TMDB / IMDB</div><h2>影视资料 · ${esc(m.source || 'MIYO')}</h2></div></div><p class="source-caption">以下为公开影视资料库的评分与简介，仅作参考，不代表本站可播。可播片源见下方「完整可播」结果。</p><div class="miyo-list">${itemsHtml}</div>`;
+}
 function renderSearch() {
   $('search-tags').innerHTML = ['让子弹飞','甄嬛传','三体','肖申克的救赎'].map(q=>chip(q,'query',q)).join('');
   $('search-heading').textContent = searchState ? `搜索「${searchState.q}」` : '搜索影视';
@@ -317,6 +332,7 @@ function renderSearch() {
   const note = $('search-playback-note');
   note.hidden = !searchState;
   note.textContent = totals.open ? `已核验 ${totals.open} 部完整片源，可直接在站内播放；片长与清单在播放前再次校验。` : searchState?.pending ? '正在向公开片库检索并核验完整清单…' : '这部暂未找到通过核验的完整片源，因此不展示无效结果。可换用正式片名、去掉季数再试。';
+  renderMiyo();
   $('search-filters').hidden = true;
   $('search-filters').innerHTML = [['open','完整可播'],['all','全部资料'],['official','官方资料'],['online','待检测来源'],['candidate',availabilityLabel.candidate],['checked',availabilityLabel.checked],['unchecked',availabilityLabel.unchecked]]
     .filter(([id])=>id !== 'candidate' || totals.candidate || mode === id).map(([id,label])=>chip(`${label} ${totals[id]}`,'search-filter',id,mode === id)).join('');
@@ -402,6 +418,9 @@ async function search(q) {
       if (!data.imdb) update('imdb','',[]);
       if (!data.tencent) update('tencent','暂不可用',[]);
     }).catch(()=>{update('tencent','暂不可用',[]);update('imdb','暂不可用',[]);}),
+    location.protocol === 'file:' ? null : json(`api/miyo?${new URLSearchParams({q})}`,10000).then(data=>{
+      if (token === searchToken) { searchState.miyo = data; if (view === 'search') renderSearch(); }
+    }).catch(()=>{}),
   ]);
   if (token === searchToken) { searchState.pending = false; if (view === 'search') renderSearch(); }
 }
