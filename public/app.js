@@ -112,28 +112,28 @@ function renderHero() {
   $('hero').innerHTML = `<img class="hero-image" src="${url(x.backdrop,true)}" alt="" fetchpriority="high" style="object-position:${x.position || 'center'}"><div class="wrap hero-inner"><div class="hero-copy"><div class="kicker"><i></i>${esc(x.featured)}</div><h1>${esc(x.title)}</h1><p class="hero-alt">${esc(x.original)}</p><div class="hero-meta">${meta(x,true)}</div><p class="hero-summary">${esc(x.summary)}</p><div class="actions"><button class="button primary" data-action="${x.media?.length ? 'resume' : 'detail'}" data-value="${x.id}">${icon(x.media?.length ? 'play' : 'circle-alert')}${x.media?.length ? '播放正片' : '查看详情'}</button>${save(x)}</div></div><div class="hero-controls">${iconButton('left','上一部精选','','small')}<span class="hero-index"><b>${String(slide+1).padStart(2,'0')}</b> / ${String(featured.length).padStart(2,'0')}</span>${iconButton('right','下一部精选','','small')}</div></div>`;
 }
 // 当前热门：片方实时热榜，进入首页/刷新时拉取，失败则安静隐藏，不影响其他内容。
-let trendingState = null, trendingFetchedAt = 0;
+let trendingState = null, trendingFetchedAt = 0, trendSlide = 0;
 async function loadTrending() {
   if (Date.now() - trendingFetchedAt < 20 * 60_000 && trendingState) return;
   trendingFetchedAt = Date.now();
   try {
     const d = await json('api/trending', 12000);
     trendingState = d;
+    trendSlide = 0;
     renderTrending();
   } catch { if ($('trending')) $('trending').hidden = true; }
 }
 function renderTrending() {
-  const box = $('trending-list'); if (!box || !trendingState) return;
+  const box = $('trending-hero'); if (!box || !trendingState) return;
   const rows = trendingState.items || [];
   const note = $('trending-updated');
   if (note) note.textContent = rows.length ? `${esc(trendingState.source || '实时热榜')}${trendingState.updatedAt ? ' · ' + new Date(trendingState.updatedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : ''}` : '';
   if (!rows.length) { $('trending').hidden = true; return; }
   $('trending').hidden = false;
-  box.innerHTML = rows.map(x => {
-    const pic = url(x.poster) ? `<img src="${esc(x.poster)}" loading="lazy" alt="" decoding="async">` : '';
-    const meta = [x.year, x.category].filter(Boolean).map(esc).join(' · ');
-    return `<button type="button" class="trend-card" data-action="trend" data-value="${esc(x.title)}"><span class="trend-poster">${pic}<span class="trend-rank${x.rank <= 3 ? ' top' : ''}">${x.rank}</span></span><span class="trend-body"><span class="trend-title">${esc(x.title)}</span><span class="trend-meta">${meta || '热播'}</span></span></button>`;
-  }).join('');
+  const x = rows[trendSlide % rows.length];
+  const metaText = [x.year, x.category].filter(Boolean).map(esc).join('<span class="dot">·</span>') || '实时热播';
+  const pic = url(x.poster, true) ? `<img class="hero-image" src="${esc(x.poster)}" alt="" fetchpriority="high">` : '';
+  box.innerHTML = `${pic}<div class="wrap hero-inner"><div class="hero-copy"><div class="kicker"><i></i> 实时热榜 · 第 ${x.rank} 名</div><h1>${esc(x.title)}</h1><div class="hero-meta">${metaText}</div><div class="actions" style="margin-top:18px"><button class="button primary" data-action="trend" data-value="${esc(x.title)}">${icon('play')}搜索播放</button></div></div><div class="hero-controls"><button type="button" class="icon-button small" data-action="trend-left" aria-label="上一条热门">${icon(triggers.left)}</button><span class="hero-index"><b>${String(trendSlide + 1).padStart(2,'0')}</b> / ${String(rows.length).padStart(2,'0')}</span><button type="button" class="icon-button small" data-action="trend-right" aria-label="下一条热门">${icon(triggers.right)}</button></div></div>`;
 }
 loadTrending();
 
@@ -643,6 +643,7 @@ document.addEventListener('click',event=>{
     case 'query': submit(id); break;
     case 'history-clear': searches = []; persist(searchKey, searches); renderSearchHistory(false); break;
     case 'trend': submit(id); break;
+    case 'trend-left': case 'trend-right': { const n=(trendingState?.items||[]).length||1; trendSlide=(trendSlide+(b.dataset.action==='trend-right'?1:-1)+n)%n; renderTrending(); break; }
     case 'online-provider': loadOnline({provider:id,page:1}); break;
     case 'online-page': loadOnline({page:Math.max(1,Number(id) || 1)}); $('online-library').scrollIntoView({block:'start',behavior:'smooth'}); break;
     case 'online-retry': loadOnline({page:onlineState.page}); break;
