@@ -8,6 +8,7 @@ import { browse, scrapeStatus } from '../../lib/library-browse.mjs';
 import { scrapeMore } from '../../lib/scrape-once.mjs';
 import { fetchTrending } from '../../lib/trending.mjs';
 import { fetchMiyo } from '../../lib/miyo.mjs';
+import { fetchDoubanRatings } from '../../lib/douban.mjs';
 
 const CATEGORIES = ['all', '剧集', '电影', '动漫', '综艺', '纪录', '体育'];
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
@@ -111,6 +112,18 @@ export async function handler(event) {
     if (route === 'trending') {
       try { return json(200, await fetchTrending({timeout:4000})); }
       catch (error) { return json(502, { ok:false, error:'热门榜单暂时不可用', items:[] }); }
+    }
+    if (route === 'douban') {
+      let entries = [];
+      const titles = params.titles;
+      if (titles) { try { entries = JSON.parse(titles); } catch { return json(400, { error: 'titles 参数无效' }); } }
+      const q = (params.q || '').trim();
+      if (q) entries = [{ t: q, y: params.year || '' }];
+      if (!Array.isArray(entries) || !entries.length) return json(400, { ok:false, error:'缺少片名', items:[] });
+      entries = entries.slice(0, 60).filter(e => e && typeof (e.t || e.title) === 'string' && String(e.t || e.title).length <= 60);
+      if (!entries.length) return json(400, { ok:false, error:'缺少片名', items:[] });
+      try { return json(200, { ok:true, items: await fetchDoubanRatings(entries) }); }
+      catch (error) { console.error('douban:', error.message); return json(502, { ok:false, error:'豆瓣评分暂不可用', items:[] }); }
     }
     if (route === 'scrape-status') return json(200, scrapeStatus());
     // 「继续刮削」：现抓一页上游片单并核验几条，交给浏览器本地累积（服务器无可写磁盘）。

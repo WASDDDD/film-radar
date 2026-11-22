@@ -123,10 +123,80 @@ function meta(x, details = false) { return [x.year, kindOf(x), ...(details ? [x.
 function cards(xs, key = 'full') { return xs.map(x => {
   const playable = x.media?.some(m=>m.key === key);
   const cardTitle = x.online?.provider === 'cntv' ? x.title.replace(/^《[^》]+》\s*\d{8}\s*/, '') : x.title;
-  return `<article class="card"><button type="button" title="${esc(x.title)}" data-action="${playable ? 'resume' : 'detail'}" data-media="${key}" data-value="${esc(x.id)}">${picture(x,key)}<strong class="card-title">${esc(cardTitle)}</strong><span class="meta">${playable ? icon('play') : ''}${meta(x)}</span></button>${save(x, 'save-card')}</article>`;
+  return `<article class="card" data-douban-title="${esc(x.title)}" data-douban-year="${esc(x.year || '')}"><button type="button" title="${esc(x.title)}" data-action="${playable ? 'resume' : 'detail'}" data-media="${key}" data-value="${esc(x.id)}">${picture(x,key)}<strong class="card-title">${esc(cardTitle)}</strong><span class="meta">${playable ? icon('play') : ''}${meta(x)}</span></button>${save(x, 'save-card')}</article>`;
 }).join(''); }
 function save(x, extra = '') { const on = saved(x.id); return iconButton('save', '加入或移出片单', x.id, `${extra} ${on ? 'is-saved' : ''}`, on); }
 function empty(iconName,title,description='') { return `<div class="blank">${icon(iconName)}<strong>${esc(title)}</strong>${description ? `<p>${esc(description)}</p>` : ''}</div>`; }
+// —— 豆瓣评分：卡片角标 + 详情页展示，异步批量补齐（带内存缓存，避免重复请求） ——
+const doubanCache = new Map();
+let doubanTimer = 0, doubanRunning = false;
+function fmtVotes(n) { n = Number(n) || 0; return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n); }
+function paintDouban(node, r) {
+  const rating = r && r.rating;
+  if (node.classList.contains('card')) {
+    const poster = node.querySelector('.poster');
+    if (rating && poster && !poster.querySelector('.douban-badge')) {
+      const b = document.createElement('span');
+      b.className = 'douban-badge';
+      b.textContent = '豆瓣 ' + rating;
+      if (r.matched) b.title = `豆瓣《${r.matched}》${rating} 分${r.votes ? ` · ${fmtVotes(r.votes)} 人评价` : ''}`;
+      poster.appendChild(b);
+    }
+  } else {
+    node.hidden = false;
+    if (rating) {
+      const alias = r.matched && r.matched !== node.dataset.doubanTitle ? `<span class="muted"> · 匹配《${esc(r.matched)}》</span>` : '';
+      node.innerHTML = `<span class="douban-stars">豆瓣评分 <b>${esc(String(rating))}</b></span><span class="muted"> / 10${r.votes ? ` · ${fmtVotes(r.votes)} 人评价` : ''}${alias}</span>`;
+    } else {
+      node.innerHTML = `<span class="muted">豆瓣暂无评分</span>`;
+    }
+  }
+  node.setAttribute('data-douban-done', '');
+}
+const DOUBAN_BATCH = 6;
+function doubanCached(k) { const c = doubanCache.get(k); return c && !c.pending ? c : null; }
+async function hydrateDouban() {
+  if (doubanRunning) return;
+  const all0 = [...document.querySelectorAll('[data-douban-title]:not([data-douban-done])')];
+  if (!all0.length) return;
+  // 详情/搜索里的条目全处理；首页大列表只处理当前视口附近的，避免一次性把豆瓣配额刷爆
+  const nodes = all0.filter(n => {
+    if (!n.closest('#home-grid')) return true;
+    const r = n.getBoundingClientRect();
+    return r.bottom > -300 && r.top < window.innerHeight + 300;
+  }).sort((a, b) => (a.closest('#home-grid') ? 1 : 0) - (b.closest('#home-grid') ? 1 : 0));
+  if (!nodes.length) return;
+  doubanRunning = true;
+  try {
+    const need = new Map();
+    for (const n of nodes) {
+      const t = n.dataset.doubanTitle; if (!t) { n.setAttribute('data-douban-done', ''); continue; }
+      const y = n.dataset.doubanYear || '', k = t + '|' + y, c = doubanCached(k);
+      if (c) { paintDouban(n, c); continue; }
+      if (!need.has(k)) need.set(k, { t, y });
+    }
+    const all = [...need.values()];
+    if (all.length) {
+      try {
+        const data = await json('api/douban?titles=' + encodeURIComponent(JSON.stringify(all.slice(0, DOUBAN_BATCH))), 12000);
+        for (const it of (data.items || [])) doubanCache.set(it.t + '|' + (it.year || ''), it);
+      } catch { /* 网络失败忽略，下次渲染再补 */ }
+      for (const n of nodes) {
+        if (n.getAttribute('data-douban-done') !== null) continue;
+        const t = n.dataset.doubanTitle, y = n.dataset.doubanYear || '';
+        let c = doubanCached(t + '|' + y);
+        if (!c) for (const [kk, vv] of doubanCache) { if (!vv.pending && kk.startsWith(t + '|')) { c = vv; break; } }
+        if (c) paintDouban(n, c);
+      }
+    }
+    // 还有没补的，稍后接着补（不猛刷，避免豆瓣封 IP）
+    const remaining = document.querySelectorAll('[data-douban-title]:not([data-douban-done])').length;
+    if (remaining > 0 && all.length > DOUBAN_BATCH) { clearTimeout(doubanTimer); doubanTimer = setTimeout(hydrateDouban, 2500); }
+  } finally { doubanRunning = false; }
+}
+function scheduleDouban() { clearTimeout(doubanTimer); doubanTimer = setTimeout(hydrateDouban, 160); }
+// 滚动时补当前视口内还没评分的卡片
+window.addEventListener('scroll', () => { if (document.querySelector('#home-grid [data-douban-title]:not([data-douban-done])')) scheduleDouban(); }, { passive: true });
 function renderHero() {
   if (!$('hero')) return; // 精选放映大图已移除，保留函数以兼容其他调用
   const x = featured[slide];
@@ -263,7 +333,7 @@ function renderHome() {
     + `<div class="facet-row" id="home-sort">${[['default','综合排序'],['newest','最新上映'],['rating','评分最高'],['episodes','集数最多']].map(([id,label])=>chip(label,'scrape-sort',id,scrapedFilter.sort === id)).join('')}</div>`;
   const key = filter === 'preview' ? 'trailer' : 'full';
   const shown = pool.slice(0, homeShown);
-  $('home-grid').innerHTML = cards(shown,key) + (pool.length > shown.length ? `<div class="home-more"><button class="button outline" data-action="home-more">继续加载（还有 ${pool.length - shown.length} 部）</button></div>` : '');
+  $('home-grid').innerHTML = cards(shown,key) + (pool.length > shown.length ? `<div class="home-more"><button class="button outline" data-action="home-more">继续加载（还有 ${pool.length - shown.length} 部）</button></div>` : ''); scheduleDouban();
   if ($('hero')) $('hero').querySelector('.hero-controls').hidden = featured.length < 2;
   // 同一部片只留最近一条进度，避免同一剧集的多个分集把这一栏撑长
   const recent = [...new Map(history.filter(h => { const x = items.get(h.id) || h.item; return x && (availability(x) === 'open' || x.vod) && x.media?.some(m => m.key === h.key); }).map(h => [h.id, h])).values()].slice(0, 8);
@@ -274,7 +344,7 @@ function renderOnline() {
   const s = onlineState;
   $('online-filters').innerHTML = [['all','全部来源'],['cntv','央视完整节目'],['commons','开放电影']].map(([id,label])=>chip(label,'online-provider',id,s.provider === id)).join('');
   $('online-status').textContent = s.pending ? '正在连接在线片库…' : s.error || `${s.total} 条公开目录 · 点播时核验 · 第 ${s.page} / ${s.pages || 1} 页${s.stale ? ' · 离线目录快照' : ''}${s.note ? ' · '+s.note : ''}`;
-  $('online-grid').innerHTML = cards(s.items);
+  $('online-grid').innerHTML = cards(s.items); scheduleDouban();
   $('online-empty').hidden = !!s.items.length || s.pending;
   $('online-empty').innerHTML = empty('search',s.error ? '片库暂时未连接' : '此片库没有匹配结果',s.error ? '可重试连接；下方已验证片库仍可使用。' : '此处仅检索央视与开放电影片库，其他电影、剧集或综艺请搜索全部影视。') + (s.q ? `<div class="source-row">${chip('搜索全部影视','query',s.q)}</div>` : '');
   $('online-pager').innerHTML = `<button class="button outline" data-action="online-page" data-value="${s.page-1}"${s.pending || s.page <= 1 ? ' disabled' : ''}>上一页</button><span>${s.page} / ${s.pages || 1}</span><button class="button outline" data-action="online-page" data-value="${s.page+1}"${s.pending || s.page >= s.pages ? ' disabled' : ''}>下一页</button><button class="button outline" data-action="online-retry">刷新</button>`;
@@ -296,7 +366,7 @@ function renderLibrary() {
   $('list-tabs').innerHTML = lists.map(l => chip(l.name,'list',l.id,l === list)).join('') + (list && list.id !== 'saved' ? iconButton('edit','重命名片单',list.id,'small') : '');
   const visible = list ? list.entries.map(restore).filter(x=>availability(x) === 'open') : [];
   $('list-notice').textContent = list ? `完整可播 ${visible.length} 部` : '';
-  $('library-grid').innerHTML = cards(visible);
+  $('library-grid').innerHTML = cards(visible); scheduleDouban();
   $('library-empty').hidden = !!visible.length;
   $('library-empty').innerHTML = empty('bookmark','片单里还没有影片');
 }
@@ -337,7 +407,7 @@ function renderSearch() {
   $('search-filters').innerHTML = [['open','完整可播'],['all','全部资料'],['official','官方资料'],['online','待检测来源'],['candidate',availabilityLabel.candidate],['checked',availabilityLabel.checked],['unchecked',availabilityLabel.unchecked]]
     .filter(([id])=>id !== 'candidate' || totals.candidate || mode === id).map(([id,label])=>chip(`${label} ${totals[id]}`,'search-filter',id,mode === id)).join('');
   const grid = cards(results);
-  if ($('search-grid').dataset.sig !== grid) { $('search-grid').innerHTML = grid; $('search-grid').dataset.sig = grid; }
+  if ($('search-grid').dataset.sig !== grid) { $('search-grid').innerHTML = grid; $('search-grid').dataset.sig = grid; scheduleDouban(); }
   $('search-empty').hidden = !!results.length;
   $('search-empty').innerHTML = !searchState ? empty('search','搜索片名或关键词') : searchState.pending ? empty('search','正在检索完整片源…') : empty('search','暂无完整可播放源');
   $('source-status').textContent = searchState ? `${totals.open} 部完整可播${searchState.pending ? ' · 正在继续检索…' : ''}${searchState.vod ? ` · 片库：${searchState.vod}` : ''}` : '';
@@ -458,9 +528,9 @@ function showDetail(id, mediaKey) {
   }
   const missing = x.officialProvider ? '本站暂无可播放的完整正片，下面提供官方观看入口。' : availability(x) === 'candidate' ? '已找到完整候选，尚未通过站内播放验证。' :
     checks.has(x.id) ? '已查，未找到可接入站内直放的授权正片。' : '尚未核验可在本站播放的正片来源。';
-  $('detail-content').innerHTML = `<div class="detail-head"><strong>${esc(x.title)}</strong><div class="source-row">${save(x,'small')}${iconButton('close','关闭详情','','small')}</div></div><div class="detail-body">${x.media?.length ? '<section class="detail-play"><div id="player" class="player"></div><div id="media-options" class="source-row"></div></section>' : ''}${full(x) ? '' : `<p class="source-caption">${missing}</p>`}<div class="detail-intro">${picture(x)}<div><h2>${esc(x.title)}</h2>${x.original && x.original !== x.title ? `<div class="muted">${esc(x.original)}</div>` : ''}<div class="meta">${meta(x,true)}</div><p>${esc(x.summary || '暂无剧情简介。')}</p></div></div>${detailSources(x)}</div>`;
+  $('detail-content').innerHTML = `<div class="detail-head"><strong>${esc(x.title)}</strong><div class="source-row">${save(x,'small')}${iconButton('close','关闭详情','','small')}</div></div><div class="detail-body">${x.media?.length ? '<section class="detail-play"><div id="player" class="player"></div><div id="media-options" class="source-row"></div></section>' : ''}${full(x) ? '' : `<p class="source-caption">${missing}</p>`}<div class="detail-intro">${picture(x)}<div><h2>${esc(x.title)}</h2>${x.original && x.original !== x.title ? `<div class="muted">${esc(x.original)}</div>` : ''}<div class="meta">${meta(x,true)}</div><div class="douban-detail" data-douban-title="${esc(x.title)}" data-douban-year="${esc(x.year || '')}" hidden></div><p>${esc(x.summary || '暂无剧情简介。')}</p></div></div>${detailSources(x)}</div>`;
   if (!$('detail').open) $('detail').showModal();
-  $('detail').scrollTop = 0;
+  $('detail').scrollTop = 0; scheduleDouban();
   if (x.media?.length) {
     showMediaOptions(x);
     if (mediaKey) startMedia(x.media.some(m=>m.key === mediaKey) ? mediaKey : x.media[0].key);
