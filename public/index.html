@@ -8,6 +8,34 @@
   <title>影视雷达 · Film Radar</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <script>
+  // 去掉 Netlify 免费版注入的 “Powered by Netlify” 悬浮徽标：
+  // 它在 <head> 里插一个 async 脚本，脚本再往 body 追加 nl-badge-frame / nl-hud-frame 两个 iframe。
+  // 这里在它落地之前把脚本节点摘掉（脚本自己会因为找不到 data-nf-variant 直接 return），
+  // 万一已经被执行，就把追加出来的 iframe 一并删除。
+  (() => {
+    const KILL = ['nl-badge-frame', 'nl-hud-frame'];
+    const isHud = n => n.tagName === 'SCRIPT' && /\/\.netlify\/scripts\/hud(?:\?|$)/.test(n.getAttribute('src') || '');
+    const sweep = root => {
+      if (!root || root.nodeType !== 1) return;
+      if (isHud(root)) { root.remove(); return; }
+      for (const id of KILL) {
+        if (root.id === id) { root.remove(); return; }
+        root.querySelectorAll?.('#' + id).forEach(el => el.remove());
+      }
+      root.querySelectorAll?.('script[src*="/.netlify/scripts/hud"]').forEach(el => el.remove());
+    };
+    new MutationObserver(records => {
+      for (const r of records) {
+        for (const n of r.addedNodes) sweep(n);
+        if (r.type === 'attributes' && r.target?.nodeType === 1) sweep(r.target);
+      }
+      for (const id of KILL) document.getElementById(id)?.remove();
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener('DOMContentLoaded', () => KILL.forEach(id => document.getElementById(id)?.remove()));
+    setInterval(() => KILL.forEach(id => document.getElementById(id)?.remove()), 800);
+  })();
+  </script>
   <script src="catalog.js" defer></script>
   <script src="verified-films.js" defer></script>
   <script src="assets/hls.min.js" defer></script>

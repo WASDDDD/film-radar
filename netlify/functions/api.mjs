@@ -5,6 +5,7 @@ import { library, resolveSource } from '../../lib/online-sources.mjs';
 import { chineseSearch, CHINESE_TITLE_ALIASES } from '../../lib/chinese-search.mjs';
 import { searchVod, resolveEpisodeById, fetchItemById } from '../../lib/vod-sources.mjs';
 import { browse, scrapeStatus } from '../../lib/library-browse.mjs';
+import { scrapeMore } from '../../lib/scrape-once.mjs';
 
 const CATEGORIES = ['all', '剧集', '电影', '动漫', '综艺', '纪录', '体育'];
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
@@ -106,6 +107,14 @@ export async function handler(event) {
     }
 
     if (route === 'scrape-status') return json(200, scrapeStatus());
+    // 「继续刮削」：现抓一页上游片单并核验几条，交给浏览器本地累积（服务器无可写磁盘）。
+    if (route === 'scrape-more') {
+      const cursor = params.cursor || '0:2';
+      if (!/^\d{1,2}:\d{1,5}$/.test(cursor)) return json(400, { error: '游标无效' });
+      const take = Math.min(5, Math.max(1, Number(params.take || 3)));
+      try { return json(200, await scrapeMore({ cursor, take })); }
+      catch (error) { console.error('scrape-more:', error.message); return json(502, { error: '刮削暂时不可用，请稍后再试' }); }
+    }
     // 静态站没有后台刮削器：启动/暂停都只是把当前片库状态回给页面，按钮不会报错。
     if (route === 'scrape-start' || route === 'scrape-stop') return json(200, scrapeStatus());
 

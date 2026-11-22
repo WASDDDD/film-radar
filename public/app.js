@@ -30,6 +30,11 @@ function rememberVod(rows) {
 for (const x of Object.values(vodStore)) if (x?.id && x.media?.length) items.set(x.id, x);
 for (const x of imports) items.set(x.id,x);
 let scraped = [], scrapedDone = false;
+// 静态部署版没有后台刮削器，但有「继续刮削」：每次点一下现抓一页、现场核验，增量存在本机。
+const extraKey = 'film-radar.extra.v1', cursorKey = 'film-radar.scrape.cursor.v1';
+let extras = stored(extraKey, []);
+let scrapeCursor = localStorage.getItem(cursorKey) || '0:2';
+for (const x of extras) if (x?.id && x.media?.length) { items.set(x.id, x); scraped.push(x); }
 let scrapedFilter = {category:'all', region:'all'};
 let scrapedFacets = {category:{}, region:{}};
 // 片库可能上万条：按当前筛选条件分页拉取，记住拉到第几页，翻页只追加不重拉。
@@ -117,18 +122,20 @@ async function refreshScrape() {
 }
 function renderScrape() {
   const s = scrapeState;
-  // 静态部署版没有后台刮削器：片库是随包发布的快照，进度条直接显示 100%，也不给启动/暂停按钮。
+  // 静态部署版没有后台刮削器：片库随包发布，按钮改成「继续刮削」——点一下现抓一页、现场核验。
   const pct = s.static ? 100 : s.cap ? Math.min(100, Math.round(s.items / s.cap * 100)) : (s.running ? 100 : 0);
   const panel = $('scrape-panel'); if (!panel) return;
-  $('scrape-title').textContent = s.static ? '片库已发布' : s.running ? '片库刮削中' : (s.items ? '片库刮削已暂停' : '片库刮削待启动');
+  $('scrape-title').textContent = s.static
+    ? (extras.length ? `片库已发布 · 本机 +${extras.length}` : '片库已发布')
+    : s.running ? '片库刮削中' : (s.items ? '片库刮削已暂停' : '片库刮削待启动');
   const toggle = $('scrape-toggle');
-  if (toggle) { toggle.hidden = !!s.static; toggle.textContent = s.running ? '暂停' : '继续'; }
+  if (toggle && !toggle.dataset.busy) toggle.textContent = s.static ? '继续刮削' : s.running ? '暂停' : '继续';
   const bar = panel.querySelector('.scrape-bar'); if (bar) bar.classList.toggle('idle', !s.running);
   $('scrape-fill').style.width = pct + '%';
   const mins = s.elapsed ? Math.max(1, Math.round(s.elapsed / 60)) : 0;
   $('scrape-stats').innerHTML = [
-    `<span>已入库 <b>${s.items}</b> 部${s.cap ? ` / ${s.cap}` : ''}</span>`,
-    s.static ? '' : `<span>本轮新增 <b>${s.added || 0}</b></span>`,
+    `<span>已入库 <b>${(s.static ? s.items + extras.length : s.items)}</b> 部${s.cap ? ` / ${s.cap}` : ''}</span>`,
+    s.static ? (extras.length ? `<span>本机扩充 <b>${extras.length}</b></span>` : '<span>点右侧「继续刮削」可现抓新片</span>') : `<span>本轮新增 <b>${s.added || 0}</b></span>`,
     s.rate ? `<span>速度 <b>${s.rate}</b> 部/分</span>` : '',
     s.running && mins ? `<span>已运行 <b>${mins}</b> 分钟</span>` : '',
     s.lastError ? `<span title="${esc(s.lastError)}">上游异常已跳过</span>` : '',
@@ -138,6 +145,28 @@ function renderScrape() {
   $('scrape-sources').innerHTML = Object.entries(s.providers || {}).sort((a,b)=>b[1]-a[1])
     .map(([k,v])=>`<span>${esc(names[k] || k)} <b>${v}</b></span>`).join('')
     + Object.entries(s.kinds || {}).map(([k,v])=>`<span>${esc(kinds[k] || k)} <b>${v}</b></span>`).join('');
+}
+// 静态版「继续刮削」：一次请求抓一页上游片单、核验几条，通过的存在本机并立刻进首页。
+async function scrapeSome() {
+  const btn = $('scrape-toggle');
+  if (!btn || btn.dataset.busy) return;
+  btn.dataset.busy = '1'; btn.textContent = '刮削中…';
+  try {
+    const data = await json(`api/scrape-more?cursor=${encodeURIComponent(scrapeCursor)}&take=3`, 24000);
+    if (data.cursor) { scrapeCursor = data.cursor; try { localStorage.setItem(cursorKey, data.cursor); } catch {} }
+    const fresh = (data.items || []).filter(x => x?.id && x.media?.length && !items.has(x.id));
+    for (const x of fresh) { extras.push(x); items.set(x.id, x); scraped.push(x); }
+    if (extras.length > 400) extras = extras.slice(-400);
+    try { localStorage.setItem(extraKey, JSON.stringify(extras)); } catch {}
+    toast(fresh.length ? `已收入 ${fresh.length} 部可播放影片` : '这一页没有新的可播放影片，再点一次继续翻');
+  } catch (e) {
+    toast(e.message || '刮削失败，稍后再试');
+  } finally {
+    delete btn.dataset.busy;
+    btn.textContent = '继续刮削';
+    renderScrape(); 
+    if (view === 'home') renderHome();
+  }
 }
 async function toggleScrape() {
   const on = !scrapeState.running;
@@ -165,6 +194,10 @@ function renderHome() {
     const out = {...(scrapedFacets[key] || {})};
     for (const x of catalog) {
       if (availability(x) !== 'open' || x.vod) continue;
+      const v = key === 'category' ? categoryOf(x) : x.region;
+      if (v) out[v] = (out[v] || 0) + 1;
+    }
+    for (const x of extras) {
       const v = key === 'category' ? categoryOf(x) : x.region;
       if (v) out[v] = (out[v] || 0) + 1;
     }
@@ -571,7 +604,7 @@ document.addEventListener('click',event=>{
       else renderHome();
       break;
     }
-    case 'scrape-toggle': toggleScrape(); break;
+    case 'scrape-toggle': if (scrapeState.static) scrapeSome(); else toggleScrape(); break;
     case 'scrape-category': pickScrapedFilter('category', id); break;
     case 'scrape-region': pickScrapedFilter('region', id); break;
     case 'filter': filter = id; homeShown = 96; renderHome(); $('home-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); break;
