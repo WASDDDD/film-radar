@@ -561,7 +561,8 @@ function startMedia(key) {
   }
   if (!file && !url(m.url || m.src,true)) return;
   const source = file ? URL.createObjectURL(file) : m.url || m.src;
-  $('player').innerHTML = `<video controls playsinline controlsList="nodownload" preload="metadata" aria-label="${esc(x.title)} ${esc(m.label)}"></video><div class="player-actions"><button class="button outline" data-action="player-fullscreen">全屏观看</button></div><div id="player-status" class="player-note" role="status">正在读取视频…</div>${m.credit ? `<p class="player-note">${esc(m.credit)}${url(m.official) ? ` · <a href="${url(m.official)}" target="_blank" rel="noopener noreferrer">来源与署名</a>` : ''}${url(m.license) ? ` · <a href="${url(m.license)}" target="_blank" rel="noopener noreferrer">许可</a>` : ''}${url(m.licenseEvidence) ? ` · <a href="${url(m.licenseEvidence)}" target="_blank" rel="noopener noreferrer">许可依据</a>` : ''}${m.verified ? ` · ${esc(m.verified)}` : ''}</p>` : ''}`;
+  const epCount = x.media?.length || 0;
+  $('player').innerHTML = `<video controls playsinline controlsList="nodownload" preload="metadata" aria-label="${esc(x.title)} ${esc(m.label)}"></video><div class="player-actions">${epCount > 1 ? `<button class="button outline" data-action="player-episodes">选集 ${epCount}</button>` : ''}<button class="button outline" data-action="player-fullscreen">全屏观看</button></div><div class="player-epbar">${epCount > 1 ? `<button data-action="player-episodes">选集 ${epCount}</button>` : ''}<button data-action="player-exitfs">退出全屏</button></div><div id="player-eppanel" class="player-eppanel" hidden></div><div id="player-status" class="player-note" role="status">正在读取视频…</div>${m.credit ? `<p class="player-note">${esc(m.credit)}${url(m.official) ? ` · <a href="${url(m.official)}" target="_blank" rel="noopener noreferrer">来源与署名</a>` : ''}${url(m.license) ? ` · <a href="${url(m.license)}" target="_blank" rel="noopener noreferrer">许可</a>` : ''}${url(m.licenseEvidence) ? ` · <a href="${url(m.licenseEvidence)}" target="_blank" rel="noopener noreferrer">许可依据</a>` : ''}${m.verified ? ` · ${esc(m.verified)}` : ''}</p>` : ''}`;
   const video = $('player').querySelector('video'), p = {video,id:x.id,key,last:-1,blob:file ? source : null}; player = p;
   const status = $('player-status'), previous = history.find(h=>h.id === x.id && h.key === key);
   const backups = [...new Set([...(Array.isArray(m.backup) ? m.backup : [m.backup]),...(m.variants || []).map(v=>v.url || v.src)].filter(link=>link !== source && url(link)))].slice(0,3);
@@ -612,6 +613,14 @@ function startMedia(key) {
     } else { video.src = link; play(); }
   }
   attachSource(source);
+}
+function toggleEpisodePanel() {
+  const panel = $('player-eppanel');
+  if (!panel || !current?.media?.length) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  const x = current, active = player?.key;
+  panel.innerHTML = `<h4>选集 · ${esc(x.title)}（${x.media.length}）</h4><div class="player-epgrid">${x.media.map(m=>`<button type="button" class="chip" data-action="episode-pick" data-value="${esc(m.key)}" aria-pressed="${m.key === active}">${esc(m.label)}</button>`).join('')}</div>`;
+  panel.hidden = false;
 }
 function openSheet(html,title, focusInput = false) {
   $('sheet-content').innerHTML = `<div class="detail-head"><strong id="sheet-title">${esc(title)}</strong>${iconButton('close','关闭面板','','small')}</div><div class="sheet-body">${html}</div>`;
@@ -697,17 +706,20 @@ document.addEventListener('click',event=>{
     case 'resume': showDetail(id,b.dataset.media || 'full'); break;
     case 'media': startMedia(id); $('media-options').querySelector('[aria-pressed="true"]')?.focus({preventScroll:true}); break;
     case 'player-fullscreen': {
-      const v = $('player')?.querySelector('video');
+      const box = $('player'), v = box?.querySelector('video');
       if (!v) break;
       try {
-        if (v.requestFullscreen) v.requestFullscreen().then(() => {
-          // 竖屏看 16:9 会留下大黑边；支持的话转横屏让视频铺满，不支持就退回居中。
+        // 全屏容器而不是视频本体：这样切集时只换 video，不会退出全屏，选集控件也一直在。
+        if (box.requestFullscreen) box.requestFullscreen().then(() => {
           try { const p = screen.orientation?.lock?.('landscape'); if (p?.catch) p.catch(()=>{}); } catch {}
-        }).catch(()=>{});
+        }).catch(()=>{ v.webkitEnterFullscreen?.(); });
         else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
       } catch {}
       break;
     }
+    case 'player-exitfs': { try { document.exitFullscreen?.(); } catch {} break; }
+    case 'player-episodes': toggleEpisodePanel(); break;
+    case 'episode-pick': { if (player) startMedia(id); break; }
     case 'vod-alt': {const x = items.get(b.dataset.item) || current; if (x) switchVodLine(x, id); break;}
     case 'close': b.closest('dialog')?.close(); break;
     case 'save': chooseList(id); break;
