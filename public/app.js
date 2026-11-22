@@ -35,7 +35,7 @@ const extraKey = 'film-radar.extra.v1', cursorKey = 'film-radar.scrape.cursor.v1
 let extras = stored(extraKey, []);
 let scrapeCursor = localStorage.getItem(cursorKey) || '0:2';
 for (const x of extras) if (x?.id && x.media?.length) { items.set(x.id, x); scraped.push(x); }
-let scrapedFilter = {category:'all', region:'all', quality:'all'};
+let scrapedFilter = {category:'all', region:'all', quality:'all', sort:'default'};
 let scrapedFacets = {category:{}, region:{}};
 // 片库可能上万条：按当前筛选条件分页拉取，记住拉到第几页，翻页只追加不重拉。
 let scrapedPages = {loaded: 0, total: 1, busy: false};
@@ -80,7 +80,27 @@ const availability = x => sourceStates.get(x.id) === 'failed' ? 'failed' : x.off
 const availabilityLabel = {open:'站内正片',official:'官方平台 · 无站内源',online:'待检测片源',candidate:'候选待复测',checked:'未找到站内源',unchecked:'仅资料 · 无站内源'};
 const kindOf = x => x.genres?.some(g => /动画|animation|anime/i.test(g)) ? '动画' : x.kind === 'tv' || x.kind === '剧集' ? '剧集' : '电影';
 const snapshot = ({id,title,original,year,kind,genres,poster,summary,score,official,watch,online,officialProvider,playback,sourceProvider,sourcePage,media,duration,remarks}) => ({id,title,original,year,kind,genres,poster,summary,score,official,watch,online,officialProvider,playback,sourceProvider,sourcePage,media,duration,remarks});
-for (const h of history) if (h.item?.online && !items.has(h.id)) items.set(h.id,h.item);
+for (const h of history) if (h.item && !items.has(h.id)) items.set(h.id,h.item);
+const resumeSnap = (x, key) => {
+  const s = snapshot(x);
+  s.vod = !!x.vod; s.resolution = x.resolution; s.width = x.width; s.height = x.height; s.area = x.area; s.lang = x.lang; s.director = x.director;
+  s.media = (x.media || []).filter(m => m.key === key).concat((x.media || []).filter(m => m.key !== key).slice(0, 5));
+  return s;
+};
+// 择优理由（借鉴 MIYO best+reasons）：解释为什么这条线路成为默认。
+function pickReasonRow(x, alts = [], count = 0) {
+  if (!x?.vod) return '';
+  const rs = [];
+  const short = Math.min(x.width || 0, x.height || 0);
+  if (short >= 2160) rs.push('4K 超高清');
+  else if (short >= 1060) rs.push('1080P+ 画质优选');
+  else if (short >= 700) rs.push('720P 高清');
+  if (x.kind === 'tv' && count > 1) rs.push(`${count} 集完整`);
+  if (alts.length) rs.push(`已对比 ${alts.length + 1} 条线路`);
+  if (x.score) rs.push(`评分 ${x.score}`);
+  if (!rs.length) rs.push('清单完整可播');
+  return `<div class="source-row pick-reasons"><span class="pick-badge">为什么选这条</span>${rs.map(r => `<span class="chip reason">${esc(r)}</span>`).join('')}</div>`;
+}
 let onlineState = {q:'',provider:'all',page:1,items:[],total:0,pages:1,pending:false,loaded:false}, onlineToken = 0;
 const restore = x => items.get(x.id) || x;
 for (const span of document.querySelectorAll('[data-i]')) span.innerHTML = icon(span.dataset.i);
@@ -215,6 +235,9 @@ function renderHome() {
     (scrapedFilter.region === 'all' || x.region === scrapedFilter.region) &&
     (scrapedFilter.quality !== '1080' || isHd(x));
   const pool = [...new Map([...imports,...catalog,...scraped].filter(x=>availability(x) === 'open' && (filter !== 'series' || x.kind === 'tv') && matchFacet(x)).map(x=>[x.id,x])).values()];
+  if (scrapedFilter.sort === 'newest') pool.sort((a,b)=>((Number(b.year)>2027?0:Number(b.year))||0)-((Number(a.year)>2027?0:Number(a.year))||0));
+  else if (scrapedFilter.sort === 'rating') pool.sort((a,b)=>(Number(b.score)||0)-(Number(a.score)||0));
+  else if (scrapedFilter.sort === 'episodes') pool.sort((a,b)=>(b.media?.length||0)-(a.media?.length||0));
   const count = Math.max([...catalog,...scraped].filter(x=>availability(x) === 'open').length, (scrapeState.items || 0) + catalog.filter(x=>availability(x) === 'open' && !x.vod).length);
   const cats = [['all','全部'],['剧集','剧集'],['电影','电影'],['动漫','动漫'],['综艺','综艺'],['纪录','纪录'],['体育','体育']];
   const regions = [['all','全部地区'],['中国','国产'],['欧美','欧美'],['日本','日本'],['韩国','韩国'],['台湾','台湾'],['香港','香港'],['亚洲其他','其他']];
@@ -236,15 +259,16 @@ function renderHome() {
   $('home-filters').innerHTML = filters.map(([id,label])=>chip(id === 'open' ? `${label} ${count}` : label,'filter',id,id === filter)).join('')
     + `<div class="facet-row" id="home-category">${cats.map(([id,label])=>{ const n = id === 'all' ? ` ${Object.values(catCount).reduce((a,b)=>a+b,0)}` : ` ${catCount[id] || 0}`; return chip(label + n,'scrape-category',id,scrapedFilter.category === id); }).join('')}</div>`
     + `<div class="facet-row" id="home-region">${regions.map(([id,label])=>{ const n = id === 'all' ? ` ${Object.values(regCount).reduce((a,b)=>a+b,0)}` : ` ${regCount[id] || 0}`; return chip(label + n,'scrape-region',id,scrapedFilter.region === id); }).join('')}</div>`
-    + `<div class="facet-row" id="home-quality">${[['all','全部画质'],['1080','仅高清 1080P+']].map(([id,label])=>chip(label,'scrape-quality',id,scrapedFilter.quality === id)).join('')}</div>`;
+    + `<div class="facet-row" id="home-quality">${[['all','全部画质'],['1080','仅高清 1080P+']].map(([id,label])=>chip(label,'scrape-quality',id,scrapedFilter.quality === id)).join('')}</div>`
+    + `<div class="facet-row" id="home-sort">${[['default','综合排序'],['newest','最新上映'],['rating','评分最高'],['episodes','集数最多']].map(([id,label])=>chip(label,'scrape-sort',id,scrapedFilter.sort === id)).join('')}</div>`;
   const key = filter === 'preview' ? 'trailer' : 'full';
   const shown = pool.slice(0, homeShown);
   $('home-grid').innerHTML = cards(shown,key) + (pool.length > shown.length ? `<div class="home-more"><button class="button outline" data-action="home-more">继续加载（还有 ${pool.length - shown.length} 部）</button></div>` : '');
   if ($('hero')) $('hero').querySelector('.hero-controls').hidden = featured.length < 2;
   // 同一部片只留最近一条进度，避免同一剧集的多个分集把这一栏撑长
-  const recent = [...new Map(history.filter(h => { const x = items.get(h.id); return x && availability(x) === 'open' && x.media?.some(m => m.key === h.key); }).map(h => [h.id, h])).values()].slice(0, 8);
+  const recent = [...new Map(history.filter(h => { const x = items.get(h.id) || h.item; return x && (availability(x) === 'open' || x.vod) && x.media?.some(m => m.key === h.key); }).map(h => [h.id, h])).values()].slice(0, 8);
   $('home-resume').hidden = !recent.length;
-  $('resume-items').innerHTML = recent.map(h => { const x = items.get(h.id), m = x.media?.find(y => y.key === h.key) || {key:h.key,label:'在线正片'}; return `<button class="resume-card" data-action="resume" data-value="${esc(x.id)}" data-media="${esc(m.key)}">${icon('play')}<span><strong>${esc(x.title)}</strong><small>${esc(m.label)} · ${formatTime(h.at)}</small><progress max="${h.duration || 1}" value="${h.at}" aria-label="播放进度"></progress></span>${icon('chevron-right')}</button>`; }).join('');
+  $('resume-items').innerHTML = recent.map(h => { const x = items.get(h.id) || h.item || {}, m = x.media?.find(y => y.key === h.key) || {key:h.key,label:'在线正片'}, q = x.resolution ? `<em>${esc(x.resolution)}</em> · ` : ''; return `<button class="resume-card" data-action="resume" data-value="${esc(x.id || h.id)}" data-media="${esc(m.key)}">${icon('play')}<span><strong>${esc(x.title || h.id)}</strong><small>${q}${esc(m.label)} · ${formatTime(h.at)}</small><progress max="${h.duration || 1}" value="${h.at}" aria-label="播放进度"></progress></span>${icon('chevron-right')}</button>`; }).join('');
 }
 function renderOnline() {
   const s = onlineState;
@@ -388,7 +412,7 @@ function detailSources(x) {
     const quality = x.width && x.height ? `，实测 ${x.width}×${x.height}${x.resolution ? `（${esc(x.resolution)}）` : ''}` : '';
     const alts = (x.alt || []).filter(a=>a.id && a.id !== x.id);
     const altRow = alts.length ? `<section class="detail-section"><h3>备用线路</h3><p class="source-caption">同一部片在其他公开片库也有完整版本。主线路卡顿时可换一条，切换后会重新核验片长与画质。</p><div class="source-row">${alts.map(a=>`<button type="button" class="chip" data-action="vod-alt" data-value="${esc(a.id)}" data-item="${esc(x.id)}">${esc(a.provider)} · ${esc(a.resolution || '未知画质')}</button>`).join('')}</div></section>` : '';
-    return `<section class="detail-section"><h3>片源说明</h3><p class="source-caption">来源：${esc(x.sourceProvider)}公开片库接口。已核验首个播放清单为完整正片（${count > 1 ? `共 ${count} 集可切换` : `片长 ${formatTime(x.media?.[0]?.expectedDuration || 0)}`}）${quality}，清单为 HLS 分片，未加密；播放前仍会再次校验片长，不符即拒播。${x.remarks ? ` 来源标注：${esc(x.remarks)}。` : ''}</p><div class="source-row">${x.area ? `<span class="chip">${esc(x.area)}</span>` : ''}${x.lang ? `<span class="chip">${esc(x.lang)}</span>` : ''}${x.director ? `<span class="chip">导演 ${esc(x.director)}</span>` : ''}</div></section>${altRow}`;
+    return `<section class="detail-section"><h3>片源说明</h3>${pickReasonRow(x, alts, count)}<p class="source-caption">来源：${esc(x.sourceProvider)}公开片库接口。已核验首个播放清单为完整正片（${count > 1 ? `共 ${count} 集可切换` : `片长 ${formatTime(x.media?.[0]?.expectedDuration || 0)}`}）${quality}，清单为 HLS 分片，未加密；播放前仍会再次校验片长，不符即拒播。${x.remarks ? ` 来源标注：${esc(x.remarks)}。` : ''}</p><div class="source-row">${x.area ? `<span class="chip">${esc(x.area)}</span>` : ''}${x.lang ? `<span class="chip">${esc(x.lang)}</span>` : ''}${x.director ? `<span class="chip">导演 ${esc(x.director)}</span>` : ''}</div></section>${altRow}`;
   }
   if (x.sourceProvider) return `<section class="detail-section"><h3>视频来源</h3><p class="source-caption">${esc(x.sourceProvider)} · 2026-11-21 本机验证完整期段的实际解码、80% 跳播与片尾。</p><div class="source-row">${url(x.sourcePage) ? platform('来源页面',x.sourcePage) : ''}</div></section>`;
   if (x.officialProvider) {
@@ -483,7 +507,7 @@ function record(p, remove = false) {
   if (!remove && p.last === Math.floor(at)) return;
   p.last = Math.floor(at);
   const entry = items.get(p.id);
-  history = (remove ? others : [{id:p.id,key:p.key,at,duration,...(entry?.online ? {item:snapshot(entry)} : {})},...others]).slice(0,30);
+  history = (remove ? others : [{id:p.id,key:p.key,at,duration,...(entry ? {item:resumeSnap(entry,p.key)} : {})},...others]).slice(0,30);
   persist(historyKey,history);
 }
 function teardownPlayer() {
@@ -638,6 +662,7 @@ document.addEventListener('click',event=>{
     case 'scrape-category': pickScrapedFilter('category', id); break;
     case 'scrape-region': pickScrapedFilter('region', id); break;
     case 'scrape-quality': pickScrapedFilter('quality', id); break;
+    case 'scrape-sort': scrapedFilter = {...scrapedFilter, sort:id}; homeShown = 96; renderHome(); $('home-sort')?.querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); break;
     case 'filter': filter = id; homeShown = 96; renderHome(); $('home-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); break;
     case 'search-filter': if (searchState) { searchState.mode=id; renderSearch(); $('search-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); } break;
     case 'left': case 'right': { if (!$('hero')) break; const action = b.dataset.action; slide = (slide + (action === 'left' ? -1 : 1) + featured.length) % featured.length; renderHero(); $('hero').querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true}); break;}
