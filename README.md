@@ -39,16 +39,16 @@ dev-server.mjs          # 本地预览：按 Netlify 的方式跑 public/ + 同�
 ```
 
 - **视频全部走远程直链**，仓库 8 MB 左右、不含 mp4。大雄兔指向 `https://media.w3.org/2010/05/bunny/movie.mp4`（完整正片 596 秒），SINGULARITY / Glass Half / Daily Dweebs 指向 `video.blender.org` 的 PeerTube 原文件，寻龙记预告指向 `download.blender.org`。这些都实测支持 Range 请求，可拖动进度。
-- **检索与核验逻辑与手机版同一份代码**：`lib/vod-sources.mjs` 原样搬过来，仍然逐条核验清单（`#EXT-X-ENDLIST`、无 DRM、首分片可取、片长门槛），仍按 SPS 实测像素选最高画质档。函数里通过 `lib/function-env.mjs` 把 `VOD_PROVIDERS=ffzy,wujin,modu`、`VOD_DEADLINE_CAP=4000`、`VOD_BUDGET=7000` 压进环境，实测最慢一次检索 7.5 秒。
+- **检索与核验逻辑与手机版同一份代码**：`lib/vod-sources.mjs` 原样搬过来，仍然逐条核验清单（`#EXT-X-ENDLIST`、无 DRM、首分片可取、片长门槛），仍按 SPS 实测像素选最高画质档。函数里通过 `lib/function-env.mjs` 把 `VOD_PROVIDERS=ffzy,wujin,modu,iqiyi`、`VOD_DEADLINE_CAP=4000`、`VOD_BUDGET=7000` 压进环境，实测最慢一次检索 7.5 秒。
 - **片库是静态快照 + 手动继续刮削**：`data/library.mjs` 是刮削器在手机上跑出来的 1784 部结果。服务器没有可写磁盘，所以静态版的「继续刮削」按钮改成**每次点击现场抓两页上游片单**：`/api/scrape-more?cursor=来源:页码&take=3` 在 6.5 秒预算内拉一页 MacCMS 片单、过滤短剧/漫剧/成人、并发核验 3 部清单，返回可直接播放的条目；浏览器把它们累加进 `localStorage`（`film-radar.extra.v1`，上限 400 条），游标存 `film-radar.scrape.cursor.v1`，刷新后依然在。面板显示「本机 +N / 已入库 1784+N 部」，分类计数同步把新增条目算进去。手机版仍是后台连续刮削，两边互不影响。
 - **去掉了 Netlify 免费版的悬浮徽标**：Netlify 会往 HTML 里注入 `<script async src="/.netlify/scripts/hud?variant=public" data-nf-variant="public" …>`，该脚本在 body 里塞一个 `#nl-badge-frame` 的 srcdoc iframe。`netlify.toml` 的 redirect 拦不住这条内部路径（仍 200），所以改在 `public/index.html` 最前面放一段内联脚本：`MutationObserver` 盯 `documentElement` 的 childList+subtree，一旦出现 hud 脚本节点或 `#nl-badge-frame` / `#nl-hud-frame` 立即 `remove()`（脚本靠 `document.currentScript || document.querySelector("script[data-nf-variant]")` 定位，取不到就直接 return），另加 `DOMContentLoaded` 和 800ms 轮询兜底，`style.css` 里再补一条 `display:none!important`。实测线上 `iframes: []`、`hudScripts: 0`，页面完全没有徽标。
 - **播放分片不需要代理**：`vip.ffzy-plays.com` 等播放域名实测返回 `access-control-allow-origin: *`，hls.js 直连即可；只有采集站 API 没有 CORS 头，所以检索必须走函数。
 - 本地预览：`node dev-server.mjs`（默认 <http://127.0.0.1:18880>），它同时服务 `public/` 和函数，行为和线上一致。
 - 部署：Netlify 站点用 `netlify.toml` 的 `publish = "public"`、`functions = "netlify/functions"`，构建命令留空（纯静态 + 预打包函数）。`TMDB_TOKEN` 是可选的站点环境变量，不配就不启用 TMDB 那一路检索。
 
-## 通用片名检索（2026-11-21 新增，当日扩容至 4 条片源并按实测分辨率选线）
+## 通用片名检索（2026-11-21 新增，2026-11-23 扩容至 6 条片源含 4K/1080P 高清源）
 
-- 搜索框现在会并行查询公开片库接口，任意中文片名都能现查，不再只限预置条目。当前接入 **4 条公开 MacCMS 采集源**：非凡资源（api.ffzyapi.com）、无尽资源（api.wujinapi.com）、魔都资源（caiji.moduapi.cc）、北斗资源（api.apibdzy.com）。四条源并行检索、各自先核验再合并，整体耗时由最慢的一条决定，单次检索约 4–15 秒（早期源多在 1 秒内返回，慢源超预算后自动用已核验结果先出页面）。
+- 搜索框现在会并行查询公开片库接口，任意中文片名都能现查，不再只限预置条目。当前接入 **6 条公开 MacCMS 采集源**：非凡资源（api.ffzyapi.com）、无尽资源（api.wujinapi.com）、魔都资源（caiji.moduapi.cc）、北斗资源（api.apibdzy.com），以及 2026-11-23 新增的两条高清源——爱奇艺资源（iqiyizyapi.com）、155资源（155api.com）。六条源并行检索、各自先核验再合并，整体耗时由最慢的一条决定，单次检索约 4–20 秒（早期源多在 1 秒内返回，慢源超预算后自动用已核验结果先出页面）。
 - 结果只保留通过清单核验的完整正片：HLS 清单必须带 `#EXT-X-ENDLIST`（不是直播或切片）、无 SAMPLE-AES/Widevine/PlayReady/FairPlay 加密、首个分片可取，并且累加 `#EXTINF` 得到的片长达到正片门槛（电影 ≥ 20 分钟，剧集单集 ≥ 10 分钟）。核验不通过的条目直接丢弃，不会以“可能能播”的形式出现。
 - **画质按实测像素选线，不按主清单自报值**：主清单常只报 800 kbps / 1080×608，但同目录挂着 `3000k/hls/mixed.m3u8`（非凡）、`1000k_720/hls/index.m3u8`（无尽）、`2000kb/hls/index.m3u8`（魔都）这类高码率子路径。检索时把主清单与这些子路径并发测一遍，用分片里的 H.264 SPS 解析出真实宽高（`sps.mjs`，不依赖 ffprobe），按像素数取最高档；子路径片长要与主清单一致（±5% 或 30 秒内）才算同一部正片，避免把挂载的预告片当正片。分辨率档位按短边判定：长边 ≥ 3400 为 4K、≥ 2400 为 1440P、短边 ≥ 1060 为 1080P、≥ 700 为 720P，竖屏短剧不会冒充 1080P。
 - 同一部片跨来源保留多条线路：卡片详情里有「备用线路」，点一下切换（`/api/vod-item` 现取现核验），当前线路失效时不必重新搜。剧集只预先核验第一集，其余分集在点第 N 集时才单独核验并取真实片长；播放器仍在 `loadedmetadata` 用片长守卫复核，长度不符立即拒播并标记该条失败。
@@ -92,6 +92,7 @@ dev-server.mjs          # 本地预览：按 Netlify 的方式跑 public/ + 同�
 ## 影片分类与筛选（2026-11-22 新增）
 
 - 首页在「完整可播片库」标题下有三行筛选：分类（全部 / 剧集 / 电影 / 动漫 / 综艺 / 纪录 / 体育）、地区（全部地区 / 中国 / 欧美 / 日本 / 韩国 / 台湾 / 香港 / 亚洲其他）与画质（全部画质 / 仅高清 1080P+），分类/地区 chip 带实时计数。
+- **高画质补充源（2026-11-23 新增）**：新增爱奇艺资源与155资源两条采集源，实测《流浪地球2》直出 4K（3840×1608），《三体》《庆余年》《沙丘2》《抓娃娃》等为 1080P，有效缓解部分片只有 720P 的问题（《让子弹飞》《甄嬛传》等源站本身只有 720P 的片仍无法凭空提升）。爱奇艺响应快（1–2 秒），静态托管版也接入（Netlify 10 秒限制）；155资源响应较慢（3–10 秒），仅在手机版启用。
 - **画质优先选线（2026-11-22）**：同一部片有多家线路时，主线路先按实测像素排序（1080P/4K 压过 720P），画质相同才比集数与评分——此前剧集按集数优先，集数多的 720P 源会顶掉 1080P 源。
 - **「仅高清 1080P+」筛选**：点开后片库只显示短边 ≥ 1060 的条目，低清全部隐藏；筛选走服务端 `browse({quality})`，与分类/地区可叠加。源站本身只有 720P 的片（《让子弹飞》《甄嬛传》等）无法凭空提升，选高清后不会出现，这是源站上限而非本站降质。
 - 分类与地区在**入库时**就写好（`vod-catalog.mjs` 的 `CATEGORY` / `AREA` 词表，按上游 genres 与 area 归一），所以计数覆盖全库，不只是当前已加载的那几页。
