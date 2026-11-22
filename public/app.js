@@ -48,16 +48,17 @@ async function pullScraped(pages, reset) {
   if (reset) scrapedPages = {loaded: 0, total: 1, busy: false};
   scrapedPages.busy = true;
   try {
-    let page = scrapedPages.loaded + 1;
-    // total 只有拉到第一页才知道，所以用 while 现算边界
-    while (page <= Math.min(scrapedPages.loaded + pages, scrapedPages.total || 1)) {
+    const startLoaded = scrapedPages.loaded;
+    const target = startLoaded + pages;          // 本次最多再拉 pages 页（旧逻辑边界随 loaded 增长，会一路拉完整库，导致切筛选极慢）
+    for (let page = startLoaded + 1; page <= target; page++) {
+      if (scrapedPages.total && page > scrapedPages.total) break;
       const params = new URLSearchParams({limit:48, page, category:scrapedFilter.category, region:scrapedFilter.region, quality:scrapedFilter.quality});
       const d = await json(`api/scrape-browse?${params}`, 20000);
       scrapedPages.total = d.pages || 1;
       if (d.facets) scrapedFacets = d.facets;
       const rows = (d.items || []).filter(x => x.id && x.media?.length);
       for (const x of rows) { if (!items.has(x.id)) { scraped.push(x); items.set(x.id, x); } }
-      scrapedPages.loaded = page++;
+      scrapedPages.loaded = page;
     }
   } catch (e) {} finally { scrapedPages.busy = false; }
   if (view === 'home') renderHome();
@@ -67,8 +68,8 @@ setInterval(() => loadScraped(2), 180000);   // 刮削持续入库，定期补�
 async function pickScrapedFilter(kind, value) {
   scrapedFilter = {...scrapedFilter, [kind]: value};
   homeShown = 240;                      // 分类浏览时多铺一些，别被官方片库占满首屏
-  await loadScraped(6, {reset: true});
-  renderHome();
+  renderHome();                         // 先用已加载的数据按新条件即时重绘，不等网络
+  loadScraped(6, {reset: true});        // 后台按新条件补拉更多页，拉完 loadScraped 内部会再次 renderHome
 }
 let lists = stored(listsKey, [{id:'saved', name:'想看', entries:[]}]);
 let history = stored(historyKey, []), activeList = lists[0]?.id, filter = 'open';
