@@ -111,6 +111,32 @@ function renderHero() {
   const x = featured[slide];
   $('hero').innerHTML = `<img class="hero-image" src="${url(x.backdrop,true)}" alt="" fetchpriority="high" style="object-position:${x.position || 'center'}"><div class="wrap hero-inner"><div class="hero-copy"><div class="kicker"><i></i>${esc(x.featured)}</div><h1>${esc(x.title)}</h1><p class="hero-alt">${esc(x.original)}</p><div class="hero-meta">${meta(x,true)}</div><p class="hero-summary">${esc(x.summary)}</p><div class="actions"><button class="button primary" data-action="${x.media?.length ? 'resume' : 'detail'}" data-value="${x.id}">${icon(x.media?.length ? 'play' : 'circle-alert')}${x.media?.length ? '播放正片' : '查看详情'}</button>${save(x)}</div></div><div class="hero-controls">${iconButton('left','上一部精选','','small')}<span class="hero-index"><b>${String(slide+1).padStart(2,'0')}</b> / ${String(featured.length).padStart(2,'0')}</span>${iconButton('right','下一部精选','','small')}</div></div>`;
 }
+// 当前热门：片方实时热榜，进入首页/刷新时拉取，失败则安静隐藏，不影响其他内容。
+let trendingState = null, trendingFetchedAt = 0;
+async function loadTrending() {
+  if (Date.now() - trendingFetchedAt < 20 * 60_000 && trendingState) return;
+  trendingFetchedAt = Date.now();
+  try {
+    const d = await json('api/trending', 12000);
+    trendingState = d;
+    renderTrending();
+  } catch { if ($('trending')) $('trending').hidden = true; }
+}
+function renderTrending() {
+  const box = $('trending-list'); if (!box || !trendingState) return;
+  const rows = trendingState.items || [];
+  const note = $('trending-updated');
+  if (note) note.textContent = rows.length ? `${esc(trendingState.source || '实时热榜')}${trendingState.updatedAt ? ' · ' + new Date(trendingState.updatedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : ''}` : '';
+  if (!rows.length) { $('trending').hidden = true; return; }
+  $('trending').hidden = false;
+  box.innerHTML = rows.map(x => {
+    const pic = url(x.poster) ? `<img src="${esc(x.poster)}" loading="lazy" alt="" decoding="async">` : '';
+    const meta = [x.year, x.category].filter(Boolean).map(esc).join(' · ');
+    return `<button type="button" class="trend-card" data-action="trend" data-value="${esc(x.title)}"><span class="trend-poster">${pic}<span class="trend-rank${x.rank <= 3 ? ' top' : ''}">${x.rank}</span></span><span class="trend-body"><span class="trend-title">${esc(x.title)}</span><span class="trend-meta">${meta || '热播'}</span></span></button>`;
+  }).join('');
+}
+loadTrending();
+
 let scrapeState = {running:false, items:0, cap:3000, rate:0, elapsed:0, providers:{}, kinds:{}, lastError:''};
 let scrapeTimer = 0;
 async function refreshScrape() {
@@ -616,6 +642,7 @@ document.addEventListener('click',event=>{
     case 'left': case 'right': {const action = b.dataset.action; slide = (slide + (action === 'left' ? -1 : 1) + featured.length) % featured.length; renderHero(); $('hero').querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true}); break;}
     case 'query': submit(id); break;
     case 'history-clear': searches = []; persist(searchKey, searches); renderSearchHistory(false); break;
+    case 'trend': submit(id); break;
     case 'online-provider': loadOnline({provider:id,page:1}); break;
     case 'online-page': loadOnline({page:Math.max(1,Number(id) || 1)}); $('online-library').scrollIntoView({block:'start',behavior:'smooth'}); break;
     case 'online-retry': loadOnline({page:onlineState.page}); break;

@@ -6,6 +6,7 @@ import { chineseSearch, CHINESE_TITLE_ALIASES } from '../../lib/chinese-search.m
 import { searchVod, resolveEpisodeById, fetchItemById } from '../../lib/vod-sources.mjs';
 import { browse, scrapeStatus } from '../../lib/library-browse.mjs';
 import { scrapeMore } from '../../lib/scrape-once.mjs';
+import { fetchTrending } from '../../lib/trending.mjs';
 
 const CATEGORIES = ['all', '剧集', '电影', '动漫', '综艺', '纪录', '体育'];
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
@@ -106,6 +107,10 @@ export async function handler(event) {
       catch (error) { console.error('vod-episode:', id, key, error.message); return json(502, { error: error.message || '该分集暂不可播放' }); }
     }
 
+    if (route === 'trending') {
+      try { return json(200, await fetchTrending({timeout:4000})); }
+      catch (error) { return json(502, { ok:false, error:'热门榜单暂时不可用', items:[] }); }
+    }
     if (route === 'scrape-status') return json(200, scrapeStatus());
     // 「继续刮削」：现抓一页上游片单并核验几条，交给浏览器本地累积（服务器无可写磁盘）。
     if (route === 'scrape-more') {
