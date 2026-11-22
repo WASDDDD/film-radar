@@ -20,6 +20,11 @@ node service.mjs status
 
 ## 静态托管版（GitHub + Netlify，2026-11-22 新增）
 
+- 线上地址：**<https://film-radar-wasdddd.netlify.app>**
+- 源码仓库：**<https://github.com/WASDDDD/film-radar>**（公开）
+- 重新部署：`NETLIFY_AUTH_TOKEN=<令牌> node deploy.mjs`。脚本会打包 `netlify/functions`、上传 `public/` 与函数、轮询到 ready；站点已存在则复用（默认名 `film-radar-wasdddd`，可用参数覆盖）。
+- 这个站点当前是**手工 API 部署**：执行一次 `node deploy.mjs` 就更新。想让 `git push` 自动构建，需要在 Netlify 里给该站点安装 GitHub App（授权 `WASDDDD/film-radar`）——没装 App 时 Netlify 的构建会因为拿不到仓库权限报 `Host key verification failed`，走上面的脚本即可，不影响线上。
+
 目录结构：
 
 ```
