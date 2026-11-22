@@ -120,10 +120,10 @@ export async function handler(event) {
 
     if (route === 'scrape-browse') {
       const q = (params.q || '').trim(), kind = params.kind || 'all';
-      const category = params.category || 'all', region = params.region || 'all';
+      const category = params.category || 'all', region = params.region || 'all', quality = params.quality || 'all';
       const page = Number(params.page || 1), limit = Number(params.limit || 24);
-      if (q.length > 60 || !['all', 'movie', 'tv'].includes(kind) || !CATEGORIES.includes(category) || region.length > 12 || !Number.isSafeInteger(page) || page < 1 || page > 10000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 48) return json(400, { error: '片库查询参数无效' });
-      return json(200, browse({ q, kind, category, region, page, limit }));
+      if (q.length > 60 || !['all', 'movie', 'tv'].includes(kind) || !CATEGORIES.includes(category) || region.length > 12 || !['all', '1080'].includes(quality) || !Number.isSafeInteger(page) || page < 1 || page > 10000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 48) return json(400, { error: '片库查询参数无效' });
+      return json(200, browse({ q, kind, category, region, quality, page, limit }));
     }
 
     if (route === 'search') {

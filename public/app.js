@@ -35,7 +35,7 @@ const extraKey = 'film-radar.extra.v1', cursorKey = 'film-radar.scrape.cursor.v1
 let extras = stored(extraKey, []);
 let scrapeCursor = localStorage.getItem(cursorKey) || '0:2';
 for (const x of extras) if (x?.id && x.media?.length) { items.set(x.id, x); scraped.push(x); }
-let scrapedFilter = {category:'all', region:'all'};
+let scrapedFilter = {category:'all', region:'all', quality:'all'};
 let scrapedFacets = {category:{}, region:{}};
 // 片库可能上万条：按当前筛选条件分页拉取，记住拉到第几页，翻页只追加不重拉。
 let scrapedPages = {loaded: 0, total: 1, busy: false};
@@ -51,7 +51,7 @@ async function pullScraped(pages, reset) {
     let page = scrapedPages.loaded + 1;
     // total 只有拉到第一页才知道，所以用 while 现算边界
     while (page <= Math.min(scrapedPages.loaded + pages, scrapedPages.total || 1)) {
-      const params = new URLSearchParams({limit:48, page, category:scrapedFilter.category, region:scrapedFilter.region});
+      const params = new URLSearchParams({limit:48, page, category:scrapedFilter.category, region:scrapedFilter.region, quality:scrapedFilter.quality});
       const d = await json(`api/scrape-browse?${params}`, 20000);
       scrapedPages.total = d.pages || 1;
       if (d.facets) scrapedFacets = d.facets;
@@ -182,9 +182,11 @@ let homeShown = 96;
 function renderHome() {
   // 官方片库条目没有上游分类，按类型粗分；选了地区时只保留有地区信息的条目。
   const categoryOf = x => x.category || (x.kind === 'tv' ? '剧集' : '电影');
+  const isHd = x => Math.min(x.width || 0, x.height || 0) >= 1060;
   const matchFacet = x =>
     (scrapedFilter.category === 'all' || categoryOf(x) === scrapedFilter.category) &&
-    (scrapedFilter.region === 'all' || x.region === scrapedFilter.region);
+    (scrapedFilter.region === 'all' || x.region === scrapedFilter.region) &&
+    (scrapedFilter.quality !== '1080' || isHd(x));
   const pool = [...new Map([...imports,...catalog,...scraped].filter(x=>availability(x) === 'open' && (filter !== 'series' || x.kind === 'tv') && matchFacet(x)).map(x=>[x.id,x])).values()];
   const count = Math.max([...catalog,...scraped].filter(x=>availability(x) === 'open').length, (scrapeState.items || 0) + catalog.filter(x=>availability(x) === 'open' && !x.vod).length);
   const cats = [['all','全部'],['剧集','剧集'],['电影','电影'],['动漫','动漫'],['综艺','综艺'],['纪录','纪录'],['体育','体育']];
@@ -206,7 +208,8 @@ function renderHome() {
   const catCount = tally('category'), regCount = tally('region');
   $('home-filters').innerHTML = filters.map(([id,label])=>chip(id === 'open' ? `${label} ${count}` : label,'filter',id,id === filter)).join('')
     + `<div class="facet-row" id="home-category">${cats.map(([id,label])=>{ const n = id === 'all' ? ` ${Object.values(catCount).reduce((a,b)=>a+b,0)}` : ` ${catCount[id] || 0}`; return chip(label + n,'scrape-category',id,scrapedFilter.category === id); }).join('')}</div>`
-    + `<div class="facet-row" id="home-region">${regions.map(([id,label])=>{ const n = id === 'all' ? ` ${Object.values(regCount).reduce((a,b)=>a+b,0)}` : ` ${regCount[id] || 0}`; return chip(label + n,'scrape-region',id,scrapedFilter.region === id); }).join('')}</div>`;
+    + `<div class="facet-row" id="home-region">${regions.map(([id,label])=>{ const n = id === 'all' ? ` ${Object.values(regCount).reduce((a,b)=>a+b,0)}` : ` ${regCount[id] || 0}`; return chip(label + n,'scrape-region',id,scrapedFilter.region === id); }).join('')}</div>`
+    + `<div class="facet-row" id="home-quality">${[['all','全部画质'],['1080','仅高清 1080P+']].map(([id,label])=>chip(label,'scrape-quality',id,scrapedFilter.quality === id)).join('')}</div>`;
   const key = filter === 'preview' ? 'trailer' : 'full';
   const shown = pool.slice(0, homeShown);
   $('home-grid').innerHTML = cards(shown,key) + (pool.length > shown.length ? `<div class="home-more"><button class="button outline" data-action="home-more">继续加载（还有 ${pool.length - shown.length} 部）</button></div>` : '');
@@ -488,7 +491,7 @@ function startMedia(key) {
   }
   if (!file && !url(m.url || m.src,true)) return;
   const source = file ? URL.createObjectURL(file) : m.url || m.src;
-  $('player').innerHTML = `<video controls playsinline preload="metadata" aria-label="${esc(x.title)} ${esc(m.label)}"></video><div id="player-status" class="player-note" role="status">正在读取视频…</div>${m.credit ? `<p class="player-note">${esc(m.credit)}${url(m.official) ? ` · <a href="${url(m.official)}" target="_blank" rel="noopener noreferrer">来源与署名</a>` : ''}${url(m.license) ? ` · <a href="${url(m.license)}" target="_blank" rel="noopener noreferrer">许可</a>` : ''}${url(m.licenseEvidence) ? ` · <a href="${url(m.licenseEvidence)}" target="_blank" rel="noopener noreferrer">许可依据</a>` : ''}${m.verified ? ` · ${esc(m.verified)}` : ''}</p>` : ''}`;
+  $('player').innerHTML = `<video controls playsinline controlsList="nodownload" preload="metadata" aria-label="${esc(x.title)} ${esc(m.label)}"></video><div class="player-actions"><button class="button outline" data-action="player-fullscreen">全屏观看</button></div><div id="player-status" class="player-note" role="status">正在读取视频…</div>${m.credit ? `<p class="player-note">${esc(m.credit)}${url(m.official) ? ` · <a href="${url(m.official)}" target="_blank" rel="noopener noreferrer">来源与署名</a>` : ''}${url(m.license) ? ` · <a href="${url(m.license)}" target="_blank" rel="noopener noreferrer">许可</a>` : ''}${url(m.licenseEvidence) ? ` · <a href="${url(m.licenseEvidence)}" target="_blank" rel="noopener noreferrer">许可依据</a>` : ''}${m.verified ? ` · ${esc(m.verified)}` : ''}</p>` : ''}`;
   const video = $('player').querySelector('video'), p = {video,id:x.id,key,last:-1,blob:file ? source : null}; player = p;
   const status = $('player-status'), previous = history.find(h=>h.id === x.id && h.key === key);
   const backups = [...new Set([...(Array.isArray(m.backup) ? m.backup : [m.backup]),...(m.variants || []).map(v=>v.url || v.src)].filter(link=>link !== source && url(link)))].slice(0,3);
@@ -607,6 +610,7 @@ document.addEventListener('click',event=>{
     case 'scrape-toggle': if (scrapeState.static) scrapeSome(); else toggleScrape(); break;
     case 'scrape-category': pickScrapedFilter('category', id); break;
     case 'scrape-region': pickScrapedFilter('region', id); break;
+    case 'scrape-quality': pickScrapedFilter('quality', id); break;
     case 'filter': filter = id; homeShown = 96; renderHome(); $('home-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); break;
     case 'search-filter': if (searchState) { searchState.mode=id; renderSearch(); $('search-filters').querySelector('[aria-pressed=true]')?.focus({preventScroll:true}); } break;
     case 'left': case 'right': {const action = b.dataset.action; slide = (slide + (action === 'left' ? -1 : 1) + featured.length) % featured.length; renderHero(); $('hero').querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true}); break;}
@@ -619,6 +623,18 @@ document.addEventListener('click',event=>{
     case 'detail': showDetail(id); break;
     case 'resume': showDetail(id,b.dataset.media || 'full'); break;
     case 'media': startMedia(id); $('media-options').querySelector('[aria-pressed="true"]')?.focus({preventScroll:true}); break;
+    case 'player-fullscreen': {
+      const v = $('player')?.querySelector('video');
+      if (!v) break;
+      try {
+        if (v.requestFullscreen) v.requestFullscreen().then(() => {
+          // 竖屏看 16:9 会留下大黑边；支持的话转横屏让视频铺满，不支持就退回居中。
+          try { const p = screen.orientation?.lock?.('landscape'); if (p?.catch) p.catch(()=>{}); } catch {}
+        }).catch(()=>{});
+        else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+      } catch {}
+      break;
+    }
     case 'vod-alt': {const x = items.get(b.dataset.item) || current; if (x) switchVodLine(x, id); break;}
     case 'close': b.closest('dialog')?.close(); break;
     case 'save': chooseList(id); break;
